@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+<<<<<<< HEAD
 using UnityEditor; 
 
 public class CalculationNode : BaseInputNode
@@ -170,4 +171,10 @@ public class CalculationNode : BaseInputNode
 		}
 
 	}
+=======
+
+public class CalculationNode : MonoBehaviour
+{
+	// TODO Handle calculation node 
+>>>>>>> master
 }
