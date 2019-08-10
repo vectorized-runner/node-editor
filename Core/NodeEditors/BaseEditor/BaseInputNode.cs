@@ -2,12 +2,9 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public class BaseInputNode : BaseNode
+public abstract class BaseInputNode : BaseNode
 {
-	public override void DrawCurves()
-	{
-		throw new System.NotImplementedException();
-	}
+	public override void DrawCurves() {}
 
 	public virtual string GetResult()
 	{

@@ -16,16 +16,13 @@ public class InputNode : BaseInputNode
 	string randomTo;
 	string inputValue;
 
-	public InputNode()
-	{
-		windowTitle = "Input Node";
-	}
+	public override string WindowTitle => "Input Node"; 
 
 	public override void DrawWindow()
 	{
 		base.DrawWindow();
 
-		inputType = (InputType)EditorGUILayout.EnumPopup("Input Type : ", inputType); 
+		inputType = (InputType)EditorGUILayout.EnumPopup("Input Type: ", inputType); 
 
 		if(inputType == InputType.Number)
 		{
@@ -41,7 +38,6 @@ public class InputNode : BaseInputNode
 				CalculateRandom(); 
 			}
 		}
-
 	}
 
 	public override string GetResult()
@@ -49,9 +45,7 @@ public class InputNode : BaseInputNode
 		return inputValue;	
 	}
 
-	public override void DrawCurves()
-	{
-	}
+	public override void DrawCurves() {}
 
 	void CalculateRandom()
 	{
@@ -62,5 +56,4 @@ public class InputNode : BaseInputNode
 
 		inputValue = value.ToString(); 
 	}
-
 }
