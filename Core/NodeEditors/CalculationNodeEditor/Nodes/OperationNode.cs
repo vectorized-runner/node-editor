@@ -12,9 +12,7 @@ public class OperationNode : BaseInputNode
 	public override void DrawWindow()
 	{
 		base.DrawWindow();
-
-		Event e = Event.current;
-		DrawInputLabels(e);
+		DrawInputLabels();
 	}
 
 	public override void OnNodeDeleted(BaseNode node)
@@ -29,7 +27,7 @@ public class OperationNode : BaseInputNode
 		}
 	}
 
-	public override BaseInputNode GetInputNodeClickedOn(Vector2 clickPos)
+	public override BaseNode GetNodeOnPosition(Vector2 clickPos)
 	{
 		BaseInputNode clickedNode = null;
 		clickPos = AdjustClickPos(clickPos);
@@ -52,13 +50,13 @@ public class OperationNode : BaseInputNode
 	{
 		if(input1)
 		{
-			Rect endRect = GetTransitionEndRect(input1Rect, windowRect);
+			Rect endRect = ToWindowRect(input1Rect);
 			NodeEditor.DrawTransitionCurve(input1.windowRect, endRect);
 		}
 
 		if(input2)
 		{
-			Rect endRect = GetTransitionEndRect(input2Rect, windowRect);
+			Rect endRect = ToWindowRect(input2Rect);
 			NodeEditor.DrawTransitionCurve(input2.windowRect, endRect);
 		}
 	}
@@ -80,7 +78,7 @@ public class OperationNode : BaseInputNode
 		}
 	}
 
-	void DrawInputLabels(Event e)
+	void DrawInputLabels()
 	{
 		string input1Title = "None";
 		string input2Title = "None";
@@ -96,7 +94,7 @@ public class OperationNode : BaseInputNode
 
 		GUILayout.Label("Input 1: " + input1Title);
 
-		if(e.type == EventType.Repaint)
+		if(Event.current.type == EventType.Repaint)
 		{
 			// Get new created Input 1 Label 
 			input1Rect = GUILayoutUtility.GetLastRect();
@@ -104,10 +102,12 @@ public class OperationNode : BaseInputNode
 
 		GUILayout.Label("Input 2: " + input2Title);
 
-		if(e.type == EventType.Repaint)
+		if(Event.current.type == EventType.Repaint)
 		{
 			// Get new created Input 2 Label 
 			input2Rect = GUILayoutUtility.GetLastRect();
 		}
+
+		Debug.Log(GUILayoutUtility.GetLastRect()); 
 	}
 }

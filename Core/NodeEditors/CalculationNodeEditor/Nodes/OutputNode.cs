@@ -5,9 +5,8 @@ using UnityEditor;
 
 public class OutputNode : BaseNode
 {
-	string result;
 	BaseInputNode inputNode;
-	Rect inputNodeRect;
+	Rect inputAcceptRect;
 
 	public override string WindowTitle => "Output Node"; 
 
@@ -16,6 +15,14 @@ public class OutputNode : BaseNode
 		base.DrawWindow();
 
 		Event e = Event.current;
+
+		GUILayout.Label("");
+		GUILayout.Label("");
+		GUILayout.Label("");
+		GUILayout.Label("");
+
+
+
 		DrawLabels(e); 
 	}
 
@@ -23,7 +30,7 @@ public class OutputNode : BaseNode
 	{
 		if(inputNode)
 		{
-			Rect rect = GetTransitionEndRect(inputNodeRect, windowRect); 
+			Rect rect = ToWindowRect(inputAcceptRect);
 			NodeEditor.DrawTransitionCurve(inputNode.windowRect, rect);
 		}
 	}
@@ -36,12 +43,12 @@ public class OutputNode : BaseNode
 		}
 	}
 
-	public override BaseInputNode GetInputNodeClickedOn(Vector2 clickPos)
+	public override BaseNode GetNodeOnPosition(Vector2 clickPos)
 	{
 		BaseInputNode clickedNode = null;
 		clickPos = AdjustClickPos(clickPos); 
 
-		if(inputNodeRect.Contains(clickPos))
+		if(inputAcceptRect.Contains(clickPos))
 		{
 			clickedNode = inputNode;
 			inputNode = null; 
@@ -54,7 +61,7 @@ public class OutputNode : BaseNode
 	{
 		clickPos = AdjustClickPos(clickPos); 
 
-		if(inputNodeRect.Contains(clickPos) && node is BaseInputNode)
+		if(inputAcceptRect.Contains(clickPos) && node is BaseInputNode)
 		{
 			this.inputNode = node as BaseInputNode; 
 		}
@@ -73,9 +80,9 @@ public class OutputNode : BaseNode
 
 		if(e.type == EventType.Repaint)
 		{
-			inputNodeRect = GUILayoutUtility.GetLastRect();
+			inputAcceptRect = GUILayoutUtility.GetLastRect();
 		}
 
-		GUILayout.Label("Result" + result);
+		GUILayout.Label("Result");
 	}
 }

@@ -9,6 +9,7 @@ public class CalculationNodeEditor : NodeEditor
 	readonly string outputNodeData = "outputNode";
 	readonly string calculationNodeData = "calculationNode";
 	readonly string comparisonNodeData = "comparisonNode";
+	readonly string makeTransitionData = "makeTransition";
 
 	// Settings 
 	Color inputNodeColor = Color.red;
@@ -28,6 +29,17 @@ public class CalculationNodeEditor : NodeEditor
 		{
 			editorWindow = GetWindow<CalculationNodeEditor>(); 
 		}
+	}
+
+	public override void ShowNodeOptionsMenu()
+	{
+		// Show Node options on the menu 
+		GenericMenu menu = new GenericMenu();
+
+		menu.AddItem(new GUIContent("Delete Node"), false, ContextCallback, deleteNodeData);
+		menu.AddItem(new GUIContent("Make Transition"), false, ContextCallback, makeTransitionData);
+
+		base.ShowNodeOptionsMenu();
 	}
 
 	public override void ShowNodeCreatorMenu()
@@ -103,6 +115,12 @@ public class CalculationNodeEditor : NodeEditor
 		else if(callback.Equals(comparisonNodeData))
 		{
 			CreateNode<ComparisonNode>();
+		}
+		else if(callback.Equals(makeTransitionData))
+		{
+			// Update currently selected node 
+			transitionStartNode = mouseHoveredNode;
+			mouseDraggingTransitionCurve = true;
 		}
 	}
 }

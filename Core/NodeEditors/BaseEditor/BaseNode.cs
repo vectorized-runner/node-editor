@@ -6,6 +6,11 @@ using UnityEditor;
 public abstract class BaseNode : ScriptableObject
 {
 	public Rect windowRect;
+	public Color windowColor = Color.white;
+	public bool snap = false;
+	public bool lockPosition = false;
+	public bool allowResize = false; 
+	public int snapValue = 10; 
 	public virtual string WindowTitle { get; private set; } 
 
 	public abstract void DrawCurves();
@@ -16,9 +21,33 @@ public abstract class BaseNode : ScriptableObject
 
 	public virtual void OnBeforeSelfDeleted() { }
 
-	public virtual void DrawWindow() {}
+	public virtual void OnWindowColorChanged() { }
 
-	public virtual BaseInputNode GetInputNodeClickedOn(Vector2 clickPos)
+	public virtual void DrawWindow()
+	{
+		EditorGUILayout.BeginHorizontal();
+
+		EditorGUI.BeginChangeCheck(); 
+		windowColor = EditorGUILayout.ColorField(windowColor, GUILayout.Width(50f), GUILayout.Height(15f));
+		if(EditorGUI.EndChangeCheck())
+		{
+			OnWindowColorChanged(); 
+		}
+
+		lockPosition = GUILayout.Toggle(lockPosition, "Lock", "Button");
+		allowResize = GUILayout.Toggle(allowResize, "Resize", "Button"); 
+		snap = GUILayout.Toggle(snap, "Snap", "Button");
+
+		if(snap)
+		{
+			EditorGUILayout.LabelField("Snap Value", GUILayout.Width(100f));
+			snapValue = EditorGUILayout.IntField(snapValue);
+		}
+
+		EditorGUILayout.EndVertical(); 
+	}
+
+	public virtual BaseNode GetNodeOnPosition(Vector2 clickPos)
 	{
 		return null; 
 	}
@@ -30,11 +59,11 @@ public abstract class BaseNode : ScriptableObject
 		return new Vector3(pos.x - windowRect.x, pos.y - windowRect.y);
 	}
 
-	public Rect GetTransitionEndRect(Rect inputWindow, Rect thisWindow)
+	public Rect ToWindowRect(Rect original)
 	{
-		Rect rect = thisWindow;
-		rect.x += inputWindow.x;
-		rect.y += inputWindow.y + inputWindow.height / 2f;
+		Rect rect = windowRect;
+		rect.x += original.x;
+		rect.y += original.y + original.height / 2f;
 		rect.width = 1f;
 		rect.height = 1f;
 
