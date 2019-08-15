@@ -4,22 +4,24 @@ using UnityEngine;
 using UnityEditor;
 using System; 
 
-public class ScriptableNodeEditor : NodeEditor
+public class ScriptableObjectInspector : NodeEditor
 {
 	readonly string scriptableData = "scriptable";
 
-	[MenuItem("Window/ScriptableNodeEditor")]
+	[MenuItem("Window/Scriptable Object Inspector")]
 	static void ShowEditor()
 	{
-		editorWindow = GetWindow<ScriptableNodeEditor>(); 
+		editorWindow = GetWindow<ScriptableObjectInspector>(); 
 	}
 
 	public override void GetWindow()
 	{
 		if(!editorWindow)
 		{
-			editorWindow = GetWindow<ScriptableNodeEditor>(); 
+			editorWindow = GetWindow<ScriptableObjectInspector>();
 		}
+
+		editorWindow.wantsMouseMove = true;
 	}
 
 	public override void ShowNodeCreatorMenu()
@@ -39,7 +41,7 @@ public class ScriptableNodeEditor : NodeEditor
 
 		if(callback.Equals(scriptableData))
 		{
-			CreateNode<ScriptableNode>(); 
+			CreateNodeInstance<ScriptableObjectNode>(); 
 		}
 	}
 }

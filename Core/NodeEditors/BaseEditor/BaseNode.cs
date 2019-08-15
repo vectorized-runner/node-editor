@@ -7,21 +7,31 @@ public abstract class BaseNode : ScriptableObject
 {
 	public Rect windowRect;
 	public Color windowColor = Color.white;
-	public bool snap = false;
-	public bool lockPosition = false;
-	public bool allowResize = false; 
-	public int snapValue = 10; 
+	public int snapValue = 10;
+	public bool lockPosition;
+	public bool allowResize; 
+	public bool snap;
+	public bool hidden;
+	public bool groupDrag;
+
 	public virtual string WindowTitle { get; private set; } 
 
-	public abstract void DrawCurves();
+	public virtual void DrawCurves() { }
+
+	public virtual void OnBeforeSelfDeleted() { }
+
+	public virtual void OnWindowColorChanged() { }
+
+	public virtual void GroupDrag(Vector2 delta) { }
 
 	public virtual void MakeLink(BaseNode node, Vector2 clickPos) { }
 
 	public virtual void OnNodeDeleted(BaseNode node) { }
 
-	public virtual void OnBeforeSelfDeleted() { }
-
-	public virtual void OnWindowColorChanged() { }
+	public virtual BaseNode GetNodeOnPosition(Vector2 clickPos)
+	{
+		return null;
+	}
 
 	public virtual void DrawWindow()
 	{
@@ -37,6 +47,7 @@ public abstract class BaseNode : ScriptableObject
 		lockPosition = GUILayout.Toggle(lockPosition, "Lock", "Button");
 		allowResize = GUILayout.Toggle(allowResize, "Resize", "Button"); 
 		snap = GUILayout.Toggle(snap, "Snap", "Button");
+		groupDrag = GUILayout.Toggle(groupDrag, "GroupDrag", "Button"); 
 
 		if(snap)
 		{
@@ -47,11 +58,6 @@ public abstract class BaseNode : ScriptableObject
 		EditorGUILayout.EndVertical(); 
 	}
 
-	public virtual BaseNode GetNodeOnPosition(Vector2 clickPos)
-	{
-		return null; 
-	}
-
 	public Vector3 AdjustClickPos(Vector3 pos)
 	{
 		// Adjust click pos with windowRect so that 
@@ -59,7 +65,7 @@ public abstract class BaseNode : ScriptableObject
 		return new Vector3(pos.x - windowRect.x, pos.y - windowRect.y);
 	}
 
-	public Rect ToWindowRect(Rect original)
+	public Rect ToFieldRect(Rect original)
 	{
 		Rect rect = windowRect;
 		rect.x += original.x;
