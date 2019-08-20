@@ -10,11 +10,11 @@ public class ScriptableObjectNode : BaseNode
 {
 	public class FieldInfoRect
 	{
-		// On Parent Node
+		// On parent node 
 		public FieldInfo inspectedField;
 		public Rect fieldRect;
 		public int fieldId;
-		// On Children Node 
+		// On children node  
 		public ScriptableObjectNode linkedNode;
 	}
 
@@ -23,15 +23,20 @@ public class ScriptableObjectNode : BaseNode
 
 	List<FieldInfoRect> fieldInfoRects = new List<FieldInfoRect>();
 	List<ScriptableObjectNode> childNodes = new List<ScriptableObjectNode>();
+	FieldInfo[] inspectedFields;
 	ScriptableObject inspectedObject;
 	Rect inspectedRect;
-	bool remove;
-	string assetNameText;
-	string classNameText;
+	Type inspectedType;
+	string assetNameField;
+	string classNameField;
+	string createField;
+	string shortcutField;
+	string shortcutClassField;
 
-	public void SetInspectedObject(ScriptableObject so)
+	public void SetInspectedObject(ScriptableObject sObject)
 	{
-		inspectedObject = so;
+		inspectedObject = sObject;
+		OnInspectedObjectChanged();
 	}
 
 	public Rect GetInspectedRect()
@@ -46,22 +51,22 @@ public class ScriptableObjectNode : BaseNode
 
 	public override void GroupDrag(Vector2 delta)
 	{
-		childNodes.ForEach(c =>
+		childNodes.ForEach(node =>
 		{
-			c.windowRect.position += delta;
-			c.GroupDrag(delta); 
-		}); 
+			node.windowRect.position += delta;
+			node.GroupDrag(delta);
+		});
 	}
 
 	public override void OnWindowColorChanged()
 	{
-		foreach(ScriptableObjectNode node in childNodes)
+		childNodes.ForEach(node =>
 		{
 			// Child nodes inherit parent color 
 			node.windowColor = windowColor;
 			// Recursively
 			node.OnWindowColorChanged();
-		}
+		});
 	}
 
 	public override void OnBeforeSelfDeleted()
@@ -76,6 +81,8 @@ public class ScriptableObjectNode : BaseNode
 		{
 			ScriptableObjectNode scriptableNode = node as ScriptableObjectNode;
 
+			// Find the field info rect with linked node as deleted node 
+			// Remove its field info
 			if(childNodes.Contains(scriptableNode))
 			{
 				for(int i = fieldInfoRects.Count - 1; i >= 0; i--)
@@ -104,11 +111,24 @@ public class ScriptableObjectNode : BaseNode
 		}
 	}
 
+	public override void DragHiddenNodes(Vector2 delta)
+	{
+		// Move hidden child nodes by your move amount 
+		// So that their relative layout won't change 
+		foreach(var hidden in childNodes.Where(node => node.hidden))
+		{
+			hidden.windowRect.position += delta;
+			hidden.DragHiddenNodes(delta);
+		}
+	}
+
 	public override void DrawCurves()
 	{
 		if(!hidden)
 		{
-			foreach(FieldInfoRect fRect in fieldInfoRects.Where(f => !f.linkedNode.hidden))
+			IEnumerable unhidden = fieldInfoRects.Where(f => !f.linkedNode.hidden);
+
+			foreach(FieldInfoRect fRect in unhidden)
 			{
 				ScriptableObjectNode node = fRect.linkedNode;
 
@@ -144,20 +164,23 @@ public class ScriptableObjectNode : BaseNode
 		});
 	}
 
+	void OnInspectedObjectChanged()
+	{
+		// Update 
+		inspectedType = inspectedObject.GetType();
+		inspectedFields = inspectedType.GetFields();
+	}
+
 	void DrawVisibilityOptions()
 	{
 		EditorGUILayout.BeginHorizontal();
 
-		EditorGUI.BeginChangeCheck();
-		GUILayout.Toggle(false, "Expand All", "Button");
-		if(EditorGUI.EndChangeCheck())
+		if(Toggle("Expand All"))
 		{
 			ExpandChildNodes();
 		}
 
-		EditorGUI.BeginChangeCheck();
-		GUILayout.Toggle(false, "Hide All", "Button");
-		if(EditorGUI.EndChangeCheck())
+		if(Toggle("Hide All"))
 		{
 			HideChildNodes();
 		}
@@ -165,23 +188,23 @@ public class ScriptableObjectNode : BaseNode
 		EditorGUILayout.EndHorizontal();
 	}
 
-	void RemoveFieldRect(FieldInfo field, int fieldId)
+	void RemoveFieldInfoRect(FieldInfo field, int fieldId)
 	{
 		FieldInfoRect fRect = GetFieldRect(null, field, fieldId, false);
 		fieldInfoRects.Remove(fRect);
 
 		// Update fieldId for field rects sharing the same field
 		// (for updating lists) 
-		foreach(var fr in fieldInfoRects.Where(f => f.inspectedField == field))
+		foreach(var frect in fieldInfoRects.Where(fr => fr.inspectedField == field))
 		{
-			if(fr.fieldId > fieldId)
+			if(frect.fieldId > fieldId)
 			{
-				fr.fieldId--;
+				frect.fieldId--;
 			}
 		}
 
 		// Check if any node exists without linked field rect 
-		ScriptableObjectNode toRemove = childNodes.FirstOrDefault(n => !fieldInfoRects.Any(f => f.linkedNode == n));
+		ScriptableObjectNode toRemove = childNodes.FirstOrDefault(node => !fieldInfoRects.Any(fr => fr.linkedNode == node));
 
 		if(toRemove != null)
 		{
@@ -192,7 +215,7 @@ public class ScriptableObjectNode : BaseNode
 	void RemoveFieldInfo(FieldInfo field, int fieldId)
 	{
 		RemoveFieldReference(field, fieldId);
-		Type type = field.FieldType; 
+		Type type = field.FieldType;
 
 		// For single elements 
 		if(fieldId == -1)
@@ -200,7 +223,7 @@ public class ScriptableObjectNode : BaseNode
 			// Remove From field rects and child nodes if it is scriptable object 
 			if(typeof(ScriptableObject).IsAssignableFrom(type))
 			{
-				RemoveFieldRect(field, fieldId); 
+				RemoveFieldInfoRect(field, fieldId);
 			}
 		}
 		// For lists 
@@ -213,7 +236,7 @@ public class ScriptableObjectNode : BaseNode
 
 				if(typeof(ScriptableObject).IsAssignableFrom(t))
 				{
-					RemoveFieldRect(field, fieldId); 
+					RemoveFieldInfoRect(field, fieldId);
 				}
 			}
 		}
@@ -221,6 +244,8 @@ public class ScriptableObjectNode : BaseNode
 
 	void RemoveFieldReference(FieldInfo field, int fieldId)
 	{
+		OnBeforeInspectedObjectUpdated();
+
 		// Means it is not a list
 		if(fieldId == -1)
 		{
@@ -233,26 +258,44 @@ public class ScriptableObjectNode : BaseNode
 		}
 	}
 
-	ScriptableObjectNode CreateNodeInstance(ScriptableObject so)
+	ScriptableObjectNode CreateNodeInstance(ScriptableObject inspected)
 	{
-		// yPosition is decided by the count 
-		int fieldCount = childNodes.Count;
-		Rect rect = windowRect;
-		rect.position -= new Vector2(windowRect.width * 1.2f, 0f);
+		ScriptableObjectNode last = childNodes.LastOrDefault();
+
+		Rect rect = new Rect();
+
+		if(last)
+		{
+			rect.position = last.windowRect.MiddleLeft() + new Vector2(0, 300f);
+		}
+		else
+		{
+			rect.position = windowRect.MiddleLeft() - new Vector2(300f, 0f);
+		}
+
 		// Let rect auto layout 
 		rect.width = 1f;
 		rect.height = 1f;
 		// Create scriptable node 
 		ScriptableObjectNode scriptableNode = NodeEditor.CreateNodeInstance<ScriptableObjectNode>(rect);
-		scriptableNode.SetInspectedObject(so);
+		scriptableNode.SetInspectedObject(inspected);
 		// Node Color is inherited at the beginning 
 		scriptableNode.windowColor = windowColor;
-		// Hidden by default 
-		scriptableNode.hidden = true; 
 		// Add to child nodes 
 		childNodes.Add(scriptableNode);
 
 		return scriptableNode;
+	}
+
+	void OnBeforeInspectedObjectUpdated()
+	{
+		// Undo functionality for prefabs 
+		Undo.RecordObject(inspectedObject, "InspectedObjectModification");
+		PrefabUtility.RecordPrefabInstancePropertyModifications(inspectedObject);
+		// VERY IMPORTANT 
+		// Makes sure scriptable object changes are saved to disk.
+		// Without this the inspected object will reset on re-opening the editor.
+		EditorUtility.SetDirty(inspectedObject);
 	}
 
 	void DrawInspectedObject()
@@ -260,9 +303,16 @@ public class ScriptableObjectNode : BaseNode
 		EditorGUILayout.LabelField("Inspected Object");
 
 		bool isNull = inspectedObject == null;
+
+		EditorGUI.BeginChangeCheck();
 		EditorGUI.BeginDisabledGroup(!isNull);
-		inspectedObject = (ScriptableObject)EditorGUILayout.ObjectField(inspectedObject, typeof(ScriptableObject), false);
+		ScriptableObject temp = null;
+		temp = (ScriptableObject)EditorGUILayout.ObjectField(inspectedObject, typeof(ScriptableObject), false);
 		EditorGUI.EndDisabledGroup();
+		if(EditorGUI.EndChangeCheck())
+		{
+			SetInspectedObject(temp);
+		}
 
 		if(Event.current.type == EventType.Repaint)
 		{
@@ -272,75 +322,138 @@ public class ScriptableObjectNode : BaseNode
 
 		if(isNull)
 		{
-			assetNameText = EditorGUILayout.TextField("Asset Name", assetNameText);
-			classNameText = EditorGUILayout.TextField("Class Name", classNameText);
+			assetNameField = EditorGUILayout.TextField("Asset Name", assetNameField);
+			classNameField = EditorGUILayout.TextField("Class Name", classNameField);
 
-			EditorGUI.BeginChangeCheck();
-			GUILayout.Toggle(false, "Create Scriptable", "Button");
-			if(EditorGUI.EndChangeCheck())
+			if(Toggle("Create Scriptable"))
 			{
-				inspectedObject = ScriptableObjectUtility.CreateScriptableAsset(assetNameText, classNameText);
+				if(classShortcuts.ContainsKey(classNameField))
+				{
+					string val = classShortcuts[classNameField];
+					SetInspectedObject(ScriptableObjectUtility.CreateScriptableAsset(assetNameField, val));
+				}
+				else
+				{
+					SetInspectedObject(ScriptableObjectUtility.CreateScriptableAsset(assetNameField, classNameField));
+				}
+			}
+
+			DrawShortcuts();
+		}
+	}
+
+	void DrawShortcuts()
+	{
+		if(classShortcuts.Count > 0)
+		{
+			EditorGUILayout.LabelField("Saved Shortcuts");
+
+			foreach(var keyValuePair in classShortcuts)
+			{
+				EditorGUILayout.BeginHorizontal();
+
+				if(Toggle("Remove"))
+				{
+					NodeEditor.RemoveShortcut(keyValuePair.Key);
+				}
+
+				EditorGUILayout.LabelField(keyValuePair.Key);
+				EditorGUILayout.LabelField(keyValuePair.Value);
+				EditorGUILayout.EndHorizontal();
 			}
 		}
+
+		// Draw creating new shortcut
+		EditorGUILayout.BeginHorizontal();
+		shortcutField = EditorGUILayout.TextField("Shortcut", shortcutField);
+		shortcutClassField = EditorGUILayout.TextField("Class Name", shortcutClassField);
+		EditorGUILayout.EndHorizontal();
+
+		EditorGUILayout.BeginHorizontal();
+
+		if(Toggle("Create Shortcut"))
+		{
+			NodeEditor.CreateShortcut(shortcutField, shortcutClassField);
+		}
+
+		if(Toggle("Reset Shortcuts"))
+		{
+			NodeEditor.ResetShortcuts();
+		}
+
+		EditorGUILayout.EndHorizontal();
+	}
+
+	bool Toggle(string text)
+	{
+		EditorGUI.BeginChangeCheck();
+		GUILayout.Toggle(false, text, "Button");
+
+		return EditorGUI.EndChangeCheck();
 	}
 
 	void DrawInspectedFields()
 	{
-		Type inspectedType = inspectedObject.GetType();
-		FieldInfo[] inspectedFields = inspectedType.GetFields();
-
 		foreach(var field in inspectedFields)
 		{
 			Type type = field.FieldType;
 
+			// Don't draw hideininspector
+			if(Attribute.IsDefined(field, typeof(HideInInspector)))
+			{
+				continue;
+			}
+
+			string label = field.Name.SplitCamelCase().UppercaseFirst();
+
 			if(type == typeof(string))
 			{
-				DrawString(field);
+				DrawString(field, label);
 			}
 			else if(type == typeof(int))
 			{
-				DrawInt(field);
+				DrawInt(field, label);
 			}
 			else if(type == typeof(float))
 			{
-				DrawFloat(field);
+				DrawFloat(field, label);
 			}
 			else if(type == typeof(bool))
 			{
-				DrawBool(field);
+				DrawBool(field, label);
 			}
 			else if(type == typeof(Vector2))
 			{
-				DrawVector2(field);
+				DrawVector2(field, label);
 			}
 			else if(type == typeof(Vector3))
 			{
-				DrawVector3(field);
+				DrawVector3(field, label);
 			}
 			else if(type == typeof(Color))
 			{
-				DrawColor(field);
+				DrawColor(field, label);
 			}
-			else if(type == typeof(Enum))
+			else if(type.IsEnum)
 			{
-				DrawEnum(field);
+				DrawEnum(field, label);
 			}
 			else if(typeof(UnityEngine.Object).IsAssignableFrom(type))
 			{
-				DrawUnityObject(field);
+				DrawUnityObject(field, label);
 			}
 			else if(type.IsArray)
 			{
-				DrawArray(field);
+				DrawArray(field, label);
 			}
 			else if(typeof(IList).IsAssignableFrom(type))
 			{
-				DrawList(field);
+				DrawList(field, label);
 			}
 			else
 			{
 				EditorGUILayout.LabelField(field.Name);
-				EditorGUILayout.LabelField("Drawing" + type + "is not supported.");
+				EditorGUILayout.LabelField("Drawing " + type + " is not supported.");
 			}
 		}
 	}
@@ -354,27 +467,23 @@ public class ScriptableObjectNode : BaseNode
 		}
 	}
 
-	void DrawVisibilityField(ScriptableObject sObject)
+	void DrawExpandField(ScriptableObject sObject)
 	{
-		ScriptableObjectNode inspector = childNodes.FirstOrDefault(n => n.inspectedObject == sObject);
+		ScriptableObjectNode inspector = childNodes.FirstOrDefault(node => node.inspectedObject == sObject);
 
 		if(inspector != null)
 		{
 			if(inspector.hidden)
 			{
-				EditorGUI.BeginChangeCheck();
-				GUILayout.Toggle(false, "Expand", "Button");
-				if(EditorGUI.EndChangeCheck())
+				if(Toggle("Expand"))
 				{
 					inspector.hidden = false;
-					inspector.ExpandChildNodes();
+					// Do not expand child nodes 
 				}
 			}
 			else
 			{
-				EditorGUI.BeginChangeCheck();
-				GUILayout.Toggle(false, "Hide", "Button");
-				if(EditorGUI.EndChangeCheck())
+				if(Toggle("Hide"))
 				{
 					inspector.hidden = true;
 					inspector.HideChildNodes();
@@ -398,7 +507,7 @@ public class ScriptableObjectNode : BaseNode
 	FieldInfoRect GetFieldRect(ScriptableObject sObject, FieldInfo fieldInfo, int fieldId, bool createNew)
 	{
 		FieldInfoRect fRect = fieldInfoRects
-			.FirstOrDefault(f => f.inspectedField == fieldInfo && f.fieldId == fieldId);
+			.FirstOrDefault(fr => fr.inspectedField == fieldInfo && fr.fieldId == fieldId);
 
 		if(fRect == null && createNew)
 		{
@@ -410,80 +519,151 @@ public class ScriptableObjectNode : BaseNode
 
 			if(node == null)
 			{
-				node = CreateNodeInstance(sObject);
+				// Try to find from existing nodes 
+				// (Multi linking) 
+				// Note: Causes many errors as objects are linking back to themselves in many occasions
+				// Whereas creating new node for each child is safer
+				node = ScriptableObjectInspector.FindExistingNode(sObject);
+
+				if(node)
+				{
+					// Add to child nodes 
+					childNodes.Add(node);
+				}
+				else
+				{
+					// Create new 
+					node = CreateNodeInstance(sObject);
+				}
 			}
 
 			fRect.linkedNode = node;
-
 			fieldInfoRects.Add(fRect);
 		}
 
 		return fRect;
 	}
 
-	void DrawString(FieldInfo field)
+
+	void DrawString(FieldInfo field, string label)
 	{
-		EditorGUILayout.LabelField(field.Name);
+		EditorGUILayout.LabelField(label);
 		string val = (string)field.GetValue(inspectedObject);
-		field.SetValue(inspectedObject, EditorGUILayout.TextField(val));
+
+		EditorGUI.BeginChangeCheck();
+		string temp = EditorGUILayout.TextField(val);
+		if(EditorGUI.EndChangeCheck())
+		{
+			OnBeforeInspectedObjectUpdated();
+			field.SetValue(inspectedObject, temp);
+		}
 	}
 
-	void DrawInt(FieldInfo field)
+	void DrawInt(FieldInfo field, string label)
 	{
-		EditorGUILayout.LabelField(field.Name);
+		EditorGUILayout.LabelField(label);
 		int val = (int)field.GetValue(inspectedObject);
-		field.SetValue(inspectedObject, EditorGUILayout.IntField(val));
+
+		EditorGUI.BeginChangeCheck();
+		int temp = EditorGUILayout.IntField(val);
+		if(EditorGUI.EndChangeCheck())
+		{
+			OnBeforeInspectedObjectUpdated();
+			field.SetValue(inspectedObject, temp);
+		}
 	}
 
-	void DrawFloat(FieldInfo field)
+	void DrawFloat(FieldInfo field, string label)
 	{
-		EditorGUILayout.LabelField(field.Name);
+		EditorGUILayout.LabelField(label);
 		float val = (float)field.GetValue(inspectedObject);
-		field.SetValue(inspectedObject, EditorGUILayout.FloatField(val));
+
+		EditorGUI.BeginChangeCheck();
+		float temp = EditorGUILayout.FloatField(val);
+		if(EditorGUI.EndChangeCheck())
+		{
+			OnBeforeInspectedObjectUpdated();
+			field.SetValue(inspectedObject, temp);
+		}
 	}
 
-	void DrawBool(FieldInfo field)
+	void DrawBool(FieldInfo field, string label)
 	{
-		EditorGUILayout.LabelField(field.Name);
+		EditorGUILayout.LabelField(label);
 		bool val = (bool)field.GetValue(inspectedObject);
-		field.SetValue(inspectedObject, EditorGUILayout.Toggle(val));
+
+		EditorGUI.BeginChangeCheck();
+		bool temp = EditorGUILayout.Toggle(val);
+		if(EditorGUI.EndChangeCheck())
+		{
+			OnBeforeInspectedObjectUpdated();
+			field.SetValue(inspectedObject, temp);
+		}
 	}
 
-	void DrawVector2(FieldInfo field)
+	void DrawVector2(FieldInfo field, string label)
 	{
 		Vector2 val = (Vector2)field.GetValue(inspectedObject);
-		field.SetValue(inspectedObject, EditorGUILayout.Vector2Field(field.Name, val));
+
+		EditorGUI.BeginChangeCheck();
+		Vector2 temp = EditorGUILayout.Vector2Field(label, val);
+		if(EditorGUI.EndChangeCheck())
+		{
+			OnBeforeInspectedObjectUpdated();
+			field.SetValue(inspectedObject, temp);
+		}
 	}
 
-	void DrawVector3(FieldInfo field)
+	void DrawVector3(FieldInfo field, string label)
 	{
 		Vector3 val = (Vector3)field.GetValue(inspectedObject);
-		field.SetValue(inspectedObject, EditorGUILayout.Vector3Field(field.Name, val));
+
+		EditorGUI.BeginChangeCheck();
+		Vector3 temp = EditorGUILayout.Vector3Field(label, val);
+		if(EditorGUI.EndChangeCheck())
+		{
+			OnBeforeInspectedObjectUpdated();
+			field.SetValue(inspectedObject, temp);
+		}
 	}
 
-	void DrawEnum(FieldInfo field)
+	void DrawEnum(FieldInfo field, string label)
 	{
-		EditorGUILayout.LabelField(field.Name);
+		EditorGUILayout.LabelField(label);
 		Enum val = (Enum)field.GetValue(inspectedObject);
-		field.SetValue(inspectedObject, EditorGUILayout.EnumPopup(val));
+
+		EditorGUI.BeginChangeCheck();
+		Enum temp = EditorGUILayout.EnumPopup(val);
+		if(EditorGUI.EndChangeCheck())
+		{
+			OnBeforeInspectedObjectUpdated();
+			field.SetValue(inspectedObject, temp);
+		}
 	}
 
-	void DrawColor(FieldInfo field)
+	void DrawColor(FieldInfo field, string label)
 	{
-		EditorGUILayout.LabelField(field.Name);
+		EditorGUILayout.LabelField(label);
 		Color val = (Color)field.GetValue(inspectedObject);
-		field.SetValue(inspectedObject, EditorGUILayout.ColorField(val));
+
+		EditorGUI.BeginChangeCheck();
+		Color temp = EditorGUILayout.ColorField(val);
+		if(EditorGUI.EndChangeCheck())
+		{
+			OnBeforeInspectedObjectUpdated();
+			field.SetValue(inspectedObject, temp);
+		}
 	}
 
-	void DrawArray(FieldInfo field)
+	void DrawArray(FieldInfo field, string label)
 	{
-		EditorGUILayout.LabelField(field.Name);
+		EditorGUILayout.LabelField(label);
 		EditorGUILayout.LabelField("Drawing arrays is not supported.");
 	}
 
-	void DrawUnityObject(FieldInfo field)
+	void DrawUnityObject(FieldInfo field, string label)
 	{
-		EditorGUILayout.LabelField(field.Name);
+		EditorGUILayout.LabelField(label);
 		Type type = field.FieldType;
 
 		// Draw separate window for scriptable objects 
@@ -493,14 +673,20 @@ public class ScriptableObjectNode : BaseNode
 		}
 		else
 		{
+			EditorGUI.BeginChangeCheck();
 			UnityEngine.Object obj = (UnityEngine.Object)field.GetValue(inspectedObject);
-			field.SetValue(inspectedObject, EditorGUILayout.ObjectField(obj, type, false));
+			if(EditorGUI.EndChangeCheck())
+			{
+				OnBeforeInspectedObjectUpdated();
+				field.SetValue(inspectedObject, EditorGUILayout.ObjectField(obj, type, false));
+			}
 		}
 	}
 
 	void DrawScriptableObject(FieldInfo field)
 	{
 		int fieldId = -1;
+
 		ScriptableObject sObject = field.GetValue(inspectedObject) as ScriptableObject;
 
 		if(sObject == inspectedObject)
@@ -515,86 +701,167 @@ public class ScriptableObjectNode : BaseNode
 
 		if(!isNull)
 		{
-			remove = GUILayout.Toggle(remove, "Remove", "Button");
-		}
+			if(Toggle("Remove"))
+			{
+				RemoveFieldInfo(field, fieldId);
+				return;
+			}
 
-		DrawVisibilityField(sObject);
-
-		if(remove)
-		{
-			RemoveFieldInfo(field, fieldId);
-			remove = false;
+			UpdateFieldRect(sObject, field, fieldId);
 		}
 		else
 		{
-			Type fieldType = field.FieldType;
-			EditorGUI.BeginDisabledGroup(!isNull);
-
-			field.SetValue(inspectedObject, EditorGUILayout.ObjectField(sObject, fieldType, false));
-
-			if(!isNull)
-			{
-				UpdateFieldRect(sObject, field, fieldId);
-			}
-
-			EditorGUI.EndDisabledGroup();
+			DrawCreateField(field, field.FieldType.ToString());
 		}
 
+		DrawExpandField(sObject);
+
+		Type fieldType = field.FieldType;
+
+		EditorGUI.BeginDisabledGroup(!isNull);
+		EditorGUI.BeginChangeCheck();
+
+		ScriptableObject temp = (ScriptableObject)EditorGUILayout.ObjectField(sObject, fieldType, false);
+		if(EditorGUI.EndChangeCheck())
+		{
+			OnBeforeInspectedObjectUpdated();
+			field.SetValue(inspectedObject, temp);
+		}
+
+		EditorGUI.EndDisabledGroup();
 		EditorGUILayout.EndHorizontal();
 	}
 
-	void DrawList(FieldInfo field)
+	void DrawCreateField(IList iList, int index)
 	{
-		IList iList = field.GetValue(inspectedObject) as IList;
-		Type type = iList.GetType().GetGenericArguments()[0];
+		string className = iList.GetType().GetGenericArguments()[0].ToString();
 
-		EditorGUILayout.LabelField(field.Name);
+		if(Toggle("Create"))
+		{
+			OnBeforeInspectedObjectUpdated();
+			ScriptableObject asset = ScriptableObjectUtility.CreateScriptableAsset(createField, className);
+			iList[index] = asset;
+		}
+
+		createField = EditorGUILayout.TextField(createField);
+	}
+
+	void DrawCreateField(FieldInfo field, string className)
+	{
+		if(Toggle("Create"))
+		{
+			OnBeforeInspectedObjectUpdated();
+			ScriptableObject asset = ScriptableObjectUtility.CreateScriptableAsset(createField, className);
+			field.SetValue(inspectedObject, asset);
+		}
+
+		createField = EditorGUILayout.TextField(createField);
+	}
+
+	void DrawList(FieldInfo field, string label)
+	{
+		EditorGUILayout.LabelField(label);
+
+		// If not IList (caused by uninitialized lists?) 
+		if(!(field.GetValue(inspectedObject) is IList iList))
+		{
+			return;
+		}
+
+		Type type = iList.GetType().GetGenericArguments()[0];
 
 		for(int i = 0; i < iList.Count; i++)
 		{
 			int fieldId = i;
 			EditorGUILayout.BeginHorizontal();
 
-			remove = GUILayout.Toggle(remove, "Remove", "Button");
-
-			if(remove)
+			if(Toggle("Remove"))
 			{
 				RemoveFieldInfo(field, fieldId);
-				remove = false;
-				return; 
+				return;
 			}
+
+			// Shift this element to left
+			if(Toggle("Up"))
+			{
+				if(i != 0)
+				{
+					OnBeforeInspectedObjectUpdated();
+
+					if(typeof(ScriptableObject).IsAssignableFrom(type))
+					{
+						// Update field info rects
+						var fRect1 = fieldInfoRects.First(fr => fr.inspectedField == field && fr.fieldId == i);
+						var frect2 = fieldInfoRects.First(fr => fr.inspectedField == field && fr.fieldId == i - 1);
+						fRect1.fieldId--;
+						frect2.fieldId++;
+					}
+
+					// Update the list 
+					object t = iList[i - 1];
+					iList[i - 1] = iList[i];
+					iList[i] = t;
+				}
+			}
+
+			// Shift this element to right 
+			if(Toggle("Down"))
+			{
+				if(i != iList.Count - 1)
+				{
+					OnBeforeInspectedObjectUpdated();
+
+					if(typeof(ScriptableObject).IsAssignableFrom(type))
+					{
+						// Update field info rects
+						var fRect1 = fieldInfoRects.First(fr => fr.inspectedField == field && fr.fieldId == i);
+						var frect2 = fieldInfoRects.First(fr => fr.inspectedField == field && fr.fieldId == i + 1);
+						fRect1.fieldId++;
+						frect2.fieldId--;
+					}
+
+					// Update the list 
+					object t = iList[i + 1];
+					iList[i + 1] = iList[i];
+					iList[i] = t;
+				}
+			}
+
+			EditorGUI.BeginChangeCheck();
+
+			object temp = null;
 
 			if(type == typeof(string))
 			{
-				iList[i] = EditorGUILayout.TextField((string)iList[i]);
+				temp = EditorGUILayout.TextField((string)iList[i]);
 			}
 			else if(type == typeof(int))
 			{
-				iList[i] = EditorGUILayout.IntField((int)iList[i]);
+				temp = EditorGUILayout.IntField((int)iList[i]);
 			}
 			else if(type == typeof(float))
 			{
-				iList[i] = EditorGUILayout.FloatField((float)iList[i]);
+				temp = EditorGUILayout.FloatField((float)iList[i]);
 			}
 			else if(type == typeof(bool))
 			{
-				iList[i] = EditorGUILayout.Toggle((bool)iList[i]);
+				temp = EditorGUILayout.Toggle((bool)iList[i]);
 			}
 			else if(type == typeof(Vector2))
 			{
-				iList[i] = EditorGUILayout.Vector2Field("", (Vector2)iList[i]);
+				temp = EditorGUILayout.Vector2Field("", (Vector2)iList[i]);
 			}
 			else if(type == typeof(Vector3))
 			{
-				iList[i] = EditorGUILayout.Vector3Field("", (Vector3)iList[i]);
+				temp = EditorGUILayout.Vector3Field("", (Vector3)iList[i]);
 			}
 			else if(type == typeof(Color))
 			{
-				iList[i] = EditorGUILayout.ColorField((Color)iList[i]);
+				temp = EditorGUILayout.ColorField((Color)iList[i]);
 			}
 			else if(type == typeof(Enum))
 			{
-				iList[i] = EditorGUILayout.EnumPopup((Enum)iList[i]);
+				temp = EditorGUILayout.EnumPopup((Enum)iList[i]);
 			}
 			else if(type.IsArray)
 			{
@@ -612,16 +879,21 @@ public class ScriptableObjectNode : BaseNode
 
 					if(sObject == inspectedObject)
 					{
-						Debug.Log("FieldInfo reference is the same as Inspected Object. Abort.");
+						Debug.Log("Field Info reference is the same as Inspected Object. Abort.");
 						return;
 					}
 
-					DrawVisibilityField(sObject);
+					DrawExpandField(sObject);
 
 					bool isNull = sObject == null;
 
+					if(isNull)
+					{
+						DrawCreateField(iList, i);
+					}
+
 					EditorGUI.BeginDisabledGroup(!isNull);
-					iList[i] = (ScriptableObject)EditorGUILayout.ObjectField(sObject, type, false);
+					temp = EditorGUILayout.ObjectField(sObject, type, false);
 
 					if(!isNull)
 					{
@@ -632,8 +904,14 @@ public class ScriptableObjectNode : BaseNode
 				}
 				else
 				{
-					iList[i] = EditorGUILayout.ObjectField((UnityEngine.Object)iList[i], type, false);
+					temp = EditorGUILayout.ObjectField((UnityEngine.Object)iList[i], type, false);
 				}
+			}
+
+			if(EditorGUI.EndChangeCheck())
+			{
+				OnBeforeInspectedObjectUpdated();
+				iList[i] = temp;
 			}
 
 			EditorGUILayout.EndHorizontal();
@@ -646,11 +924,10 @@ public class ScriptableObjectNode : BaseNode
 	{
 		EditorGUILayout.BeginHorizontal();
 
-		EditorGUI.BeginChangeCheck();
-		GUILayout.Toggle(false, "Add", "Button");
-
-		if(EditorGUI.EndChangeCheck())
+		if(Toggle("Add"))
 		{
+			OnBeforeInspectedObjectUpdated();
+
 			if(type == typeof(string))
 			{
 				iList.Add(default(string));

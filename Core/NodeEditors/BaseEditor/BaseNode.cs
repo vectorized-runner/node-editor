@@ -9,10 +9,11 @@ public abstract class BaseNode : ScriptableObject
 	public Color windowColor = Color.white;
 	public int snapValue = 10;
 	public bool lockPosition;
-	public bool allowResize; 
 	public bool snap;
 	public bool hidden;
 	public bool groupDrag;
+	public bool allowResize = true; 
+	public Dictionary<string, string> classShortcuts = new Dictionary<string, string>();
 
 	public virtual string WindowTitle { get; private set; } 
 
@@ -21,6 +22,8 @@ public abstract class BaseNode : ScriptableObject
 	public virtual void OnBeforeSelfDeleted() { }
 
 	public virtual void OnWindowColorChanged() { }
+
+	public virtual void DragHiddenNodes(Vector2 delta) { }
 
 	public virtual void GroupDrag(Vector2 delta) { }
 
@@ -31,6 +34,11 @@ public abstract class BaseNode : ScriptableObject
 	public virtual BaseNode GetNodeOnPosition(Vector2 clickPos)
 	{
 		return null;
+	}
+
+	public virtual void SetShortcuts(Dictionary<string, string> shortcuts)
+	{
+		classShortcuts = shortcuts;
 	}
 
 	public virtual void DrawWindow()
@@ -45,7 +53,7 @@ public abstract class BaseNode : ScriptableObject
 		}
 
 		lockPosition = GUILayout.Toggle(lockPosition, "Lock", "Button");
-		allowResize = GUILayout.Toggle(allowResize, "Resize", "Button"); 
+		//allowResize = GUILayout.Toggle(allowResize, "Resize", "Button"); 
 		snap = GUILayout.Toggle(snap, "Snap", "Button");
 		groupDrag = GUILayout.Toggle(groupDrag, "GroupDrag", "Button"); 
 
@@ -67,6 +75,7 @@ public abstract class BaseNode : ScriptableObject
 
 	public Rect ToFieldRect(Rect original)
 	{
+		// Convert original rect to field rect 
 		Rect rect = windowRect;
 		rect.x += original.x;
 		rect.y += original.y + original.height / 2f;

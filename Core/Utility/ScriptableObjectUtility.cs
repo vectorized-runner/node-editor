@@ -8,6 +8,18 @@ public static class ScriptableObjectUtility
 	{
 		ScriptableObject asset = ScriptableObject.CreateInstance(className);
 
+		return GetScriptableObject(asset, assetName);
+	}
+
+	public static ScriptableObject CreateScriptableAsset<T>(string assetName) where T : ScriptableObject
+	{
+		ScriptableObject asset = ScriptableObject.CreateInstance<T>();
+
+		return GetScriptableObject(asset, assetName);
+	}
+
+	static ScriptableObject GetScriptableObject(ScriptableObject asset, string assetName)
+	{
 		Object active = Selection.activeObject;
 		string path = AssetDatabase.GetAssetPath(active);
 

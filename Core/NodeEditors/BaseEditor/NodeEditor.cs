@@ -11,7 +11,7 @@ public class NodeEditor : EditorWindow
 {
 	enum ResizeEdge { right, left, top, down }
 
-	public virtual bool DrawSettingsTab => false; 
+	public virtual bool AllowDrawSettings => true;
 	public Rect FullScreen => new Rect(0f, 0f, Screen.width, Screen.height);
 	public static List<BaseNode> nodes = new List<BaseNode>();
 	public static EditorWindow editorWindow;
@@ -22,32 +22,36 @@ public class NodeEditor : EditorWindow
 	public float zoom = 1.0f;
 	public float settingsTabWidthRatio = 0.2f;
 
-	bool PossiblyPanning => Event.current.modifiers == EventModifiers.Alt || Event.current.keyCode == KeyCode.LeftAlt;
-	bool ResizeAny => resizeDownEdge || resizeTopEdge || resizeLeftEdge || resizeRightEdge; 
-	static Color handlesColor = Color.black;
+	bool ResizeAny => resizeDownEdge || resizeTopEdge || resizeLeftEdge || resizeRightEdge;
+	Vector2 WindowDelta => Event.current.delta * GUIDragConstant;
 	static Vector2 mousePos;
+	static float curveWidth = 0.2f;
+	static Color handlesColor = new Color32(0, 100, 255, 100);
 	readonly Color gridMinorColorDark = new Color(0f, 0f, 0f, 0.18f);
 	readonly Color gridMajorColorDark = new Color(0f, 0f, 0f, 0.28f);
 	Texture2D bgTexture;
 	Vector2 zoomCoordsOrigin = Vector2.zero;
 	Material lineMaterial;
+	bool drawSettings = true;
 	bool settingsResizeRightEdge;
-	bool resizeTopEdge; 
-	bool resizeDownEdge; 
+	bool resizeTopEdge;
+	bool resizeDownEdge;
 	bool resizeRightEdge;
 	bool resizeLeftEdge;
 	bool mouseDrag;
+	bool panning;
 
 	public const string DeleteNodeData = "deleteNode";
 	const float ResizeAreaWidth = 5f;
 	const float PanSpeed = 5f;
 	const float NodeWidth = 100f;
 	const float NodeHeight = 100f;
-	const float TransitionWidth = 0.1f;
 	const float MinSettingsTabRatio = 0.2f;
 	const float ZoomMin = 0.1f;
 	const float ZoomMax = 10.0f;
-	const float GUIDragConstant = 0.5f; 
+	const float GUIDragConstant = 0.5f;
+
+	static Dictionary<string, string> classShortcuts = new Dictionary<string, string>();
 
 	public virtual void OnGUI()
 	{
@@ -55,7 +59,7 @@ public class NodeEditor : EditorWindow
 
 		HandleZoom();
 		HandlePan();
-		HandleMouseDrag(); 
+		HandleMouseDrag();
 		HandleKeyboardInput();
 
 		DrawBGTexture();
@@ -65,16 +69,11 @@ public class NodeEditor : EditorWindow
 		HandleEditorLogic();
 		EndZoomArea();
 
-		if(DrawSettingsTab)
-		{
-			BeginSettings();
-			DrawSettings();
-			EndSettings();
-		}
+		HandleSettingsTab();
 
-		if(!PossiblyPanning && !resizeLeftEdge && !resizeRightEdge && !resizeTopEdge && !resizeDownEdge)
+		if(!panning && !resizeLeftEdge && !resizeRightEdge && !resizeTopEdge && !resizeDownEdge)
 		{
-			ResetCursor(); 
+			ResetCursor();
 		}
 	}
 
@@ -84,7 +83,7 @@ public class NodeEditor : EditorWindow
 		Vector2 endTan = end + Vector2.left * 50f;
 
 		// Draw multiple bezier with different width for increased visual quality 
-		for(int i = 0; i < TransitionWidth * 10; i++)
+		for(int i = 0; i < curveWidth * 10; i++)
 		{
 			float width = (i + 1) * 2f;
 			// Actual Transition Drawing function on the Editor 
@@ -110,22 +109,34 @@ public class NodeEditor : EditorWindow
 	{
 		EditorGUILayout.Space();
 
-		EditorGUILayout.LabelField("Settings", EditorStyles.boldLabel);
+		EditorGUILayout.BeginHorizontal();
+		EditorGUILayout.LabelField("Settings", EditorStyles.boldLabel, GUILayout.Width(100f));
+
+		if(GUILayout.Toggle(false, "Hide", "Button", GUILayout.Width(100f)))
+		{
+			drawSettings = false;
+		}
+
+		EditorGUILayout.EndHorizontal();
+
+		EditorGUILayout.Space();
+
 		EditorGUILayout.BeginHorizontal();
 		EditorGUILayout.LabelField("Transition Tint", GUILayout.Width(100f), GUILayout.Height(20f));
 		handlesColor = EditorGUILayout.ColorField(handlesColor, GUILayout.Width(50f), GUILayout.Height(20f));
 		EditorGUILayout.EndHorizontal();
+		EditorGUILayout.LabelField("Curve Width");
+		curveWidth = EditorGUILayout.Slider(curveWidth, 0.1f, 1f);
 	}
 
 	public virtual void DrawNode(BaseNode node, int id)
 	{
-		// Actual Window Drawing function on the Editor 
 		node.windowRect = GUILayout.Window(id, node.windowRect, WindowFunction, node.WindowTitle);
 	}
 
 	public virtual void PaintNode(BaseNode node)
 	{
-		GUI.color = node.windowColor; 
+		GUI.color = node.windowColor;
 	}
 
 	public virtual void ShowNodeCreatorMenu()
@@ -160,6 +171,7 @@ public class NodeEditor : EditorWindow
 	{
 		T t = (T)CreateInstance(typeof(T));
 		t.windowRect = rect;
+		t.SetShortcuts(classShortcuts);
 		nodes.Add(t);
 		return t;
 	}
@@ -192,9 +204,53 @@ public class NodeEditor : EditorWindow
 		}
 	}
 
+	public static void CreateShortcut(string shortcut, string className)
+	{
+		// Add new shrotcut to the dictionary
+		classShortcuts.Add(shortcut, className);
+		// Update shortcuts on each node 
+		nodes.ForEach(node => node.SetShortcuts(classShortcuts));
+	}
+
+	public static void RemoveShortcut(string shortcut)
+	{
+		// Remove from shortcuts 
+		classShortcuts.Remove(shortcut);
+		// Update shortcuts on each node 
+		nodes.ForEach(node => node.SetShortcuts(classShortcuts));
+	}
+
+	public static void ResetShortcuts()
+	{
+		// Reset dictionary 
+		classShortcuts = new Dictionary<string, string>();
+		// Update on each ndoe 
+		nodes.ForEach(node => node.SetShortcuts(classShortcuts));
+	}
+
 	public BaseNode GetMouseHoveredNode()
 	{
 		return nodes.FirstOrDefault(node => node.windowRect.Contains(mousePos));
+	}
+
+	void HandleSettingsTab()
+	{
+		if(AllowDrawSettings)
+		{
+			if(drawSettings)
+			{
+				BeginSettings();
+				DrawSettings();
+				EndSettings();
+			}
+			else
+			{
+				if(GUILayout.Toggle(false, "Show Settings", "Button", GUILayout.Width(150f)))
+				{
+					drawSettings = true;
+				}
+			}
+		}
 	}
 
 	void ResetCursor()
@@ -205,7 +261,7 @@ public class NodeEditor : EditorWindow
 
 	void HandleMouseDrag()
 	{
-		Event e = Event.current; 
+		Event e = Event.current;
 
 		if(e.type == EventType.MouseDrag && Event.current.button == 0)
 		{
@@ -219,7 +275,7 @@ public class NodeEditor : EditorWindow
 
 	void HandleKeyboardInput()
 	{
-		Event e = Event.current; 
+		Event e = Event.current;
 
 		// Delete last clicked node on Delete key down 
 		if(e.type == EventType.KeyDown && e.keyCode == KeyCode.Delete)
@@ -232,16 +288,28 @@ public class NodeEditor : EditorWindow
 
 	void HandlePan()
 	{
-		Event e = Event.current; 
+		Event e = Event.current;
 
-		if(PossiblyPanning)
+		// If already panning 
+		if(!panning)
+		{
+			if(e.type == EventType.MouseDrag &&
+				(e.button == 0 && e.modifiers == EventModifiers.Alt) ||
+				e.button == 2)
+			{
+				panning = true;
+			}
+		}
+		// If not panning 
+		else if(e.type == EventType.MouseUp)
+		{
+			panning = false;
+		}
+
+		if(panning)
 		{
 			EditorGUIUtility.AddCursorRect(FullScreen, MouseCursor.Pan);
 		}
-
-		bool panning = e.type == EventType.MouseDrag &&
-			(e.button == 0 && e.modifiers == EventModifiers.Alt) ||
-			e.button == 2;
 
 		if(panning)
 		{
@@ -250,8 +318,7 @@ public class NodeEditor : EditorWindow
 				node.windowRect.position += e.delta * PanSpeed;
 			}
 
-			// Use the current event unless its type is layout 
-			if(e.type != EventType.Layout)
+			if(e.type != EventType.Layout && e.type != EventType.Repaint)
 			{
 				e.Use();
 			}
@@ -310,8 +377,8 @@ public class NodeEditor : EditorWindow
 			resizeTracker = false;
 		}
 
-		bool mouseWithinResizeArea = false; 
-		
+		bool mouseWithinResizeArea = false;
+
 		if(res == ResizeEdge.left || res == ResizeEdge.right)
 		{
 			mouseWithinResizeArea = e.mousePosition.x > resizeArea.xMin && e.mousePosition.x < resizeArea.xMax;
@@ -334,7 +401,7 @@ public class NodeEditor : EditorWindow
 			}
 			else if(res == ResizeEdge.top)
 			{
-				window.yMin = e.mousePosition.y; 
+				window.yMin = e.mousePosition.y;
 			}
 			else if(res == ResizeEdge.down)
 			{
@@ -469,7 +536,7 @@ public class NodeEditor : EditorWindow
 		if(lastClickedNode != null)
 		{
 			// Record changes done to this object 
-			Undo.RecordObject(lastClickedNode, "LastClickedNodeModification"); 
+			Undo.RecordObject(lastClickedNode, "LastClickedNodeModification");
 
 			if(!lastClickedNode.lockPosition)
 			{
@@ -477,9 +544,19 @@ public class NodeEditor : EditorWindow
 				PositionNode(lastClickedNode);
 			}
 
-			if(mouseDrag && lastClickedNode.groupDrag && !lastClickedNode.lockPosition)
+			// If mouse is dragging 
+			if(mouseDrag && !lastClickedNode.lockPosition)
 			{
-				lastClickedNode.GroupDrag(e.delta * GUIDragConstant);
+				// Group drag 
+				if(lastClickedNode.groupDrag)
+				{
+					lastClickedNode.GroupDrag(WindowDelta);
+				}
+				// Move hidden nodes to protect their layout 
+				else
+				{
+					lastClickedNode.DragHiddenNodes(WindowDelta);
+				}
 			}
 		}
 
@@ -538,13 +615,13 @@ public class NodeEditor : EditorWindow
 
 	Rect SnapPosition(Rect rect, int snapVal)
 	{
-		if(!PossiblyPanning)
+		if(!panning)
 		{
 			// Snap rect position 
 			rect.xMin = Snap(rect.xMin, snapVal);
 			rect.xMax = Snap(rect.xMax, snapVal);
 			rect.yMin = Snap(rect.yMin, snapVal);
-			rect.yMax = Snap(rect.yMax, snapVal); 
+			rect.yMax = Snap(rect.yMax, snapVal);
 		}
 
 		return rect;
@@ -557,7 +634,7 @@ public class NodeEditor : EditorWindow
 			return ((int)value / snap) * snap;
 		}
 
-		return (int)value; 
+		return (int)value;
 	}
 
 	void WindowFunction(int id)
@@ -637,7 +714,7 @@ public class NodeEditor : EditorWindow
 
 	void HandleZoom()
 	{
-		Event e = Event.current; 
+		Event e = Event.current;
 		// Allow adjusting the zoom with the mouse wheel as well. In this case, use the mouse coordinates
 		// as the zoom center instead of the top left corner of the zoom area. This is achieved by
 		// maintaining an origin that is used as offset when drawing any GUI elements in the zoom area.
