@@ -5,7 +5,12 @@ using System.Text.RegularExpressions;
 
 public static class StringExtensions 
 {
-	public static string SplitCamelCase(this string str)
+	public static string ToInspector(this string str)
+	{
+		return str.SplitCamelCase().UppercaseFirst();
+	}
+
+	static string SplitCamelCase(this string str)
 	{
 		return Regex.Replace(
 			Regex.Replace(
@@ -18,7 +23,7 @@ public static class StringExtensions
 		);
 	}
 
-	public static string UppercaseFirst(this string str)
+	static string UppercaseFirst(this string str)
 	{
 		// Check for empty string.
 		if(string.IsNullOrEmpty(str))

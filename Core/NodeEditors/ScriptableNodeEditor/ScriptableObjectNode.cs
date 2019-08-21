@@ -6,13 +6,20 @@ using System;
 using UnityEditor;
 using System.Linq;
 
-public class ScriptableObjectNode : BaseNode
+public class ScriptableObjectNode : Node
 {
-	public class FieldInfoRect
+	public class FieldInfoContainer
 	{
+		// This class helps us relate 
+		// Field infos with their related rect on main node
+		// and the other node they are linked with
+
 		// On parent node 
 		public FieldInfo inspectedField;
 		public Rect fieldRect;
+		// Keep track of lists
+		// Index of the element for lists
+		// -1 for non-lists
 		public int fieldId;
 		// On children node  
 		public ScriptableObjectNode linkedNode;
@@ -21,17 +28,19 @@ public class ScriptableObjectNode : BaseNode
 	public override string WindowTitle =>
 		inspectedObject ? string.Format("{0} ({1})", inspectedObject.name, inspectedObject.GetType()) : null;
 
-	List<FieldInfoRect> fieldInfoRects = new List<FieldInfoRect>();
+	List<FieldInfoContainer> fieldInfoContainers = new List<FieldInfoContainer>();
 	List<ScriptableObjectNode> childNodes = new List<ScriptableObjectNode>();
-	FieldInfo[] inspectedFields;
+	FieldInfo[] inspectedObjectFields;
 	ScriptableObject inspectedObject;
-	Rect inspectedRect;
+	Rect inspectedObjectRect;
 	Type inspectedType;
 	string assetNameField;
 	string classNameField;
 	string createField;
 	string shortcutField;
 	string shortcutClassField;
+
+	const int NonListFieldId = -1;
 
 	public void SetInspectedObject(ScriptableObject sObject)
 	{
@@ -41,7 +50,7 @@ public class ScriptableObjectNode : BaseNode
 
 	public Rect GetInspectedRect()
 	{
-		return inspectedRect;
+		return inspectedObjectRect;
 	}
 
 	public ScriptableObject GetInspectedObject()
@@ -58,36 +67,22 @@ public class ScriptableObjectNode : BaseNode
 		});
 	}
 
-	public override void OnWindowColorChanged()
-	{
-		childNodes.ForEach(node =>
-		{
-			// Child nodes inherit parent color 
-			node.windowColor = windowColor;
-			// Recursively
-			node.OnWindowColorChanged();
-		});
-	}
-
 	public override void OnBeforeSelfDeleted()
 	{
 		DeleteChildNodes();
-		childNodes = new List<ScriptableObjectNode>();
 	}
 
-	public override void OnNodeDeleted(BaseNode node)
+	public override void OnNodeDeleted(Node node)
 	{
-		if(node is ScriptableObjectNode)
+		if(node is ScriptableObjectNode scriptableNode)
 		{
-			ScriptableObjectNode scriptableNode = node as ScriptableObjectNode;
-
 			// Find the field info rect with linked node as deleted node 
 			// Remove its field info
 			if(childNodes.Contains(scriptableNode))
 			{
-				for(int i = fieldInfoRects.Count - 1; i >= 0; i--)
+				for(int i = fieldInfoContainers.Count - 1; i >= 0; i--)
 				{
-					FieldInfoRect fRect = fieldInfoRects[i];
+					FieldInfoContainer fRect = fieldInfoContainers[i];
 
 					if(fRect.linkedNode == scriptableNode)
 					{
@@ -98,16 +93,16 @@ public class ScriptableObjectNode : BaseNode
 		}
 	}
 
-	public override void DrawWindow()
+	public override void OnDrawWindow()
 	{
-		base.DrawWindow();
+		base.OnDrawWindow();
 
 		DrawInspectedObject();
 
 		if(inspectedObject != null)
 		{
 			DrawInspectedFields();
-			DrawVisibilityOptions();
+			DrawExpandHideAll();
 		}
 	}
 
@@ -115,34 +110,89 @@ public class ScriptableObjectNode : BaseNode
 	{
 		// Move hidden child nodes by your move amount 
 		// So that their relative layout won't change 
-		foreach(var hidden in childNodes.Where(node => node.hidden))
+		childNodes.ForEach(node =>
 		{
-			hidden.windowRect.position += delta;
-			hidden.DragHiddenNodes(delta);
+			if(node.isHidden)
+			{
+				node.windowRect.position += delta;
+				node.DragHiddenNodes(delta);
+			}
+		});
+	}
+
+	public override void OnDrawCurves()
+	{
+		if(!isHidden)
+		{
+			fieldInfoContainers.ForEach(container =>
+			{
+				if(!container.linkedNode.isHidden)
+				{
+					ScriptableObjectNode node = container.linkedNode;
+
+					Rect inspected = node.GetInspectedRect();
+					float startX = node.windowRect.xMax;
+					float startY = (inspected.yMin + inspected.yMax) / 2f;
+					Vector2 start = new Vector2(startX, startY);
+
+					float endX = windowRect.xMin;
+					float endY = (container.fieldRect.yMin + container.fieldRect.yMax) / 2f;
+					Vector2 end = new Vector2(endX, endY);
+
+					Color blend = (node.windowColor + windowColor) / 2f;
+
+					NodeEditor.DrawCurve(start, end, blend);
+				}
+			});
 		}
 	}
 
-	public override void DrawCurves()
+	public void OnVisualizeCurves()
 	{
-		if(!hidden)
+		// Allow resize on visualize 
+		allowResizeHorizontal = true; 
+
+		if(!isHidden)
 		{
-			IEnumerable unhidden = fieldInfoRects.Where(f => !f.linkedNode.hidden);
-
-			foreach(FieldInfoRect fRect in unhidden)
+			fieldInfoContainers.ForEach(container =>
 			{
-				ScriptableObjectNode node = fRect.linkedNode;
+				ScriptableObjectNode node = container.linkedNode;
 
-				Rect inspected = node.GetInspectedRect();
-				float startX = node.windowRect.xMax;
-				float startY = (inspected.yMin + inspected.yMax) / 2f;
-				Vector2 start = new Vector2(startX, startY);
+				if(!node.isHidden)
+				{
+					Rect other = node.windowRect;
+					Vector2 start = other.CenterRight();
+					Vector2 end = windowRect.CenterLeft();
 
-				float endX = windowRect.xMin;
-				float endY = (fRect.fieldRect.yMin + fRect.fieldRect.yMax) / 2f;
-				Vector2 end = new Vector2(endX, endY);
+					Color blend = (node.windowColor + windowColor) / 2f;
 
-				NodeEditor.DrawTransitionCurve(start, end);
+					NodeEditor.DrawCurve(start, end, blend);
+				}
+			});
+		}	
+	}
+
+	public void OnVisualizeWindow()
+	{
+		if(inspectedObject != null)
+		{
+			// Draw first string for visualizing
+			foreach(FieldInfo field in inspectedObjectFields)
+			{
+				if(field.FieldType == typeof(string))
+				{
+					string label = string.Format("{0}: {1}", field.Name.ToInspector(), field.GetValue(inspectedObject) as string);
+					EditorGUILayout.LabelField(label, EditorStyles.boldLabel);
+					return;
+				}
 			}
+
+			// If no string was found 
+			EditorGUILayout.LabelField("Nothing to show");
+		}
+		else
+		{
+			EditorGUILayout.LabelField("Inspected Object not selected.");
 		}
 	}
 
@@ -151,7 +201,7 @@ public class ScriptableObjectNode : BaseNode
 		childNodes.ForEach(node =>
 		{
 			node.HideChildNodes();
-			node.hidden = true;
+			node.isHidden = true;
 		});
 	}
 
@@ -160,19 +210,22 @@ public class ScriptableObjectNode : BaseNode
 		childNodes.ForEach(node =>
 		{
 			node.ExpandChildNodes();
-			node.hidden = false;
+			node.isHidden = false;
 		});
 	}
 
 	void OnInspectedObjectChanged()
 	{
-		// Update 
+		// Update fields
 		inspectedType = inspectedObject.GetType();
-		inspectedFields = inspectedType.GetFields();
+		inspectedObjectFields = inspectedType.GetFields();
+		// Notify scriptable object inspector 
+		ScriptableObjectInspector.OnTypeInspected(inspectedType);
 	}
 
-	void DrawVisibilityOptions()
+	void DrawExpandHideAll()
 	{
+		EditorGUILayout.Space();
 		EditorGUILayout.BeginHorizontal();
 
 		if(Toggle("Expand All"))
@@ -188,27 +241,27 @@ public class ScriptableObjectNode : BaseNode
 		EditorGUILayout.EndHorizontal();
 	}
 
-	void RemoveFieldInfoRect(FieldInfo field, int fieldId)
+	void RemoveFieldInfoContainer(FieldInfo field, int fieldId)
 	{
-		FieldInfoRect fRect = GetFieldRect(null, field, fieldId, false);
-		fieldInfoRects.Remove(fRect);
+		FieldInfoContainer container = GetFieldContainer(null, field, fieldId, false);
+		fieldInfoContainers.Remove(container);
 
 		// Update fieldId for field rects sharing the same field
 		// (for updating lists) 
-		foreach(var frect in fieldInfoRects.Where(fr => fr.inspectedField == field))
+		foreach(var listElement in fieldInfoContainers.Where(cont => cont.inspectedField == field))
 		{
-			if(frect.fieldId > fieldId)
+			if(listElement.fieldId > fieldId)
 			{
-				frect.fieldId--;
+				listElement.fieldId--;
 			}
 		}
 
 		// Check if any node exists without linked field rect 
-		ScriptableObjectNode toRemove = childNodes.FirstOrDefault(node => !fieldInfoRects.Any(fr => fr.linkedNode == node));
+		ScriptableObjectNode nodeWithoutLink = childNodes.FirstOrDefault(node => !fieldInfoContainers.Any(fr => fr.linkedNode == node));
 
-		if(toRemove != null)
+		if(nodeWithoutLink != null)
 		{
-			childNodes.Remove(toRemove);
+			childNodes.Remove(nodeWithoutLink);
 		}
 	}
 
@@ -218,12 +271,12 @@ public class ScriptableObjectNode : BaseNode
 		Type type = field.FieldType;
 
 		// For single elements 
-		if(fieldId == -1)
+		if(fieldId == NonListFieldId)
 		{
 			// Remove From field rects and child nodes if it is scriptable object 
 			if(typeof(ScriptableObject).IsAssignableFrom(type))
 			{
-				RemoveFieldInfoRect(field, fieldId);
+				RemoveFieldInfoContainer(field, fieldId);
 			}
 		}
 		// For lists 
@@ -236,7 +289,7 @@ public class ScriptableObjectNode : BaseNode
 
 				if(typeof(ScriptableObject).IsAssignableFrom(t))
 				{
-					RemoveFieldInfoRect(field, fieldId);
+					RemoveFieldInfoContainer(field, fieldId);
 				}
 			}
 		}
@@ -246,8 +299,7 @@ public class ScriptableObjectNode : BaseNode
 	{
 		OnBeforeInspectedObjectUpdated();
 
-		// Means it is not a list
-		if(fieldId == -1)
+		if(fieldId == NonListFieldId)
 		{
 			field.SetValue(inspectedObject, null);
 		}
@@ -262,15 +314,16 @@ public class ScriptableObjectNode : BaseNode
 	{
 		ScriptableObjectNode last = childNodes.LastOrDefault();
 
+		// Determine node create position 
 		Rect rect = new Rect();
 
 		if(last)
 		{
-			rect.position = last.windowRect.MiddleLeft() + new Vector2(0, 300f);
+			rect.position = last.windowRect.CenterLeft() + new Vector2(0, 300f);
 		}
 		else
 		{
-			rect.position = windowRect.MiddleLeft() - new Vector2(300f, 0f);
+			rect.position = windowRect.CenterLeft() - new Vector2(300f, 0f);
 		}
 
 		// Let rect auto layout 
@@ -294,7 +347,7 @@ public class ScriptableObjectNode : BaseNode
 		PrefabUtility.RecordPrefabInstancePropertyModifications(inspectedObject);
 		// VERY IMPORTANT 
 		// Makes sure scriptable object changes are saved to disk.
-		// Without this the inspected object will reset on re-opening the editor.
+		// Without this the ScriptableObject asset for the inspected object will reset on re-opening the editor.
 		EditorUtility.SetDirty(inspectedObject);
 	}
 
@@ -306,8 +359,7 @@ public class ScriptableObjectNode : BaseNode
 
 		EditorGUI.BeginChangeCheck();
 		EditorGUI.BeginDisabledGroup(!isNull);
-		ScriptableObject temp = null;
-		temp = (ScriptableObject)EditorGUILayout.ObjectField(inspectedObject, typeof(ScriptableObject), false);
+		ScriptableObject temp = (ScriptableObject)EditorGUILayout.ObjectField(inspectedObject, typeof(ScriptableObject), false);
 		EditorGUI.EndDisabledGroup();
 		if(EditorGUI.EndChangeCheck())
 		{
@@ -317,7 +369,7 @@ public class ScriptableObjectNode : BaseNode
 		if(Event.current.type == EventType.Repaint)
 		{
 			Rect last = GUILayoutUtility.GetLastRect();
-			inspectedRect = ToFieldRect(last);
+			inspectedObjectRect = ToLocalWindowRect(last);
 		}
 
 		if(isNull)
@@ -352,7 +404,7 @@ public class ScriptableObjectNode : BaseNode
 			{
 				EditorGUILayout.BeginHorizontal();
 
-				if(Toggle("Remove"))
+				if(Toggle("-"))
 				{
 					NodeEditor.RemoveShortcut(keyValuePair.Key);
 				}
@@ -384,83 +436,89 @@ public class ScriptableObjectNode : BaseNode
 		EditorGUILayout.EndHorizontal();
 	}
 
-	bool Toggle(string text)
+	bool Toggle(string text, params GUILayoutOption[] options)
 	{
-		EditorGUI.BeginChangeCheck();
-		GUILayout.Toggle(false, text, "Button");
-
-		return EditorGUI.EndChangeCheck();
+		return GUILayout.Toggle(false, text, "Button", options);
 	}
 
 	void DrawInspectedFields()
 	{
-		foreach(var field in inspectedFields)
+		foreach(var field in inspectedObjectFields)
 		{
-			Type type = field.FieldType;
-
-			// Don't draw hideininspector
-			if(Attribute.IsDefined(field, typeof(HideInInspector)))
-			{
-				continue;
-			}
-
-			string label = field.Name.SplitCamelCase().UppercaseFirst();
-
-			if(type == typeof(string))
-			{
-				DrawString(field, label);
-			}
-			else if(type == typeof(int))
-			{
-				DrawInt(field, label);
-			}
-			else if(type == typeof(float))
-			{
-				DrawFloat(field, label);
-			}
-			else if(type == typeof(bool))
-			{
-				DrawBool(field, label);
-			}
-			else if(type == typeof(Vector2))
-			{
-				DrawVector2(field, label);
-			}
-			else if(type == typeof(Vector3))
-			{
-				DrawVector3(field, label);
-			}
-			else if(type == typeof(Color))
-			{
-				DrawColor(field, label);
-			}
-			else if(type.IsEnum)
-			{
-				DrawEnum(field, label);
-			}
-			else if(typeof(UnityEngine.Object).IsAssignableFrom(type))
-			{
-				DrawUnityObject(field, label);
-			}
-			else if(type.IsArray)
-			{
-				DrawArray(field, label);
-			}
-			else if(typeof(IList).IsAssignableFrom(type))
-			{
-				DrawList(field, label);
-			}
-			else
-			{
-				EditorGUILayout.LabelField(field.Name);
-				EditorGUILayout.LabelField("Drawing " + type + " is not supported.");
-			}
+			DrawField(field, false);
 		}
+	}
+
+	void DrawField(FieldInfo field, bool disabled)
+	{
+		Type type = field.FieldType;
+
+		// Don't draw HideInInspector
+		if(Attribute.IsDefined(field, typeof(HideInInspector)))
+		{
+			return;
+		}
+
+		string label = field.Name.ToInspector();
+
+		EditorGUI.BeginDisabledGroup(disabled);
+
+		if(type == typeof(string))
+		{
+			DrawString(field, label);
+		}
+		else if(type == typeof(int))
+		{
+			DrawInt(field, label);
+		}
+		else if(type == typeof(float))
+		{
+			DrawFloat(field, label);
+		}
+		else if(type == typeof(bool))
+		{
+			DrawBool(field, label);
+		}
+		else if(type == typeof(Vector2))
+		{
+			DrawVector2(field, label);
+		}
+		else if(type == typeof(Vector3))
+		{
+			DrawVector3(field, label);
+		}
+		else if(type == typeof(Color))
+		{
+			DrawColor(field, label);
+		}
+		else if(type.IsEnum)
+		{
+			DrawEnum(field, label);
+		}
+		else if(typeof(UnityEngine.Object).IsAssignableFrom(type))
+		{
+			DrawUnityObject(field, label);
+		}
+		else if(type.IsArray)
+		{
+			DrawArray(field, label);
+		}
+		else if(typeof(IList).IsAssignableFrom(type))
+		{
+			DrawList(field, label);
+		}
+		else
+		{
+			EditorGUILayout.LabelField(field.Name);
+			EditorGUILayout.LabelField("Drawing " + type + " is not supported.");
+		}
+
+		EditorGUI.EndDisabledGroup();
 	}
 
 	void DeleteChildNodes()
 	{
-		// To prevent collection modified error 
+		// To prevent collection modified error, reverse iterate
 		for(int i = childNodes.Count - 1; i >= 0; i--)
 		{
 			NodeEditor.DeleteNode(childNodes.ElementAt(i));
@@ -473,47 +531,60 @@ public class ScriptableObjectNode : BaseNode
 
 		if(inspector != null)
 		{
-			if(inspector.hidden)
+			if(inspector.isHidden)
 			{
-				if(Toggle("Expand"))
+				if(Toggle("Expand", GUILayout.Width(50f)))
 				{
-					inspector.hidden = false;
+					inspector.isHidden = false;
 					// Do not expand child nodes 
 				}
 			}
 			else
 			{
-				if(Toggle("Hide"))
+				if(Toggle("Hide", GUILayout.Width(50f)))
 				{
-					inspector.hidden = true;
+					inspector.isHidden = true;
 					inspector.HideChildNodes();
 				}
 			}
 		}
 	}
 
-	void UpdateFieldRect(ScriptableObject sObject, FieldInfo fieldInfo, int fieldId)
+	void DrawGotoField(ScriptableObject sObject)
+	{
+		ScriptableObjectNode inspector = childNodes.FirstOrDefault(node => node.inspectedObject == sObject);
+
+		if(inspector != null && !inspector.isHidden)
+		{
+			if(Toggle("Go to", GUILayout.Width(50f)))
+			{
+				NodeEditor.ViewAtCenter(inspector);
+			}
+		}
+	}
+
+	void UpdateFieldContainer(ScriptableObject sObject, FieldInfo fieldInfo, int fieldId)
 	{
 		if(Event.current.type == EventType.Repaint)
 		{
 			Rect lastRect = GUILayoutUtility.GetLastRect();
-			Rect fieldRect = ToFieldRect(lastRect);
+			Rect fieldRect = ToLocalWindowRect(lastRect);
 			// Set field info rect here 
-			FieldInfoRect fRect = GetFieldRect(sObject, fieldInfo, fieldId, true);
+			FieldInfoContainer fRect = GetFieldContainer(sObject, fieldInfo, fieldId, true);
 			fRect.fieldRect = fieldRect;
 		}
 	}
 
-	FieldInfoRect GetFieldRect(ScriptableObject sObject, FieldInfo fieldInfo, int fieldId, bool createNew)
+	FieldInfoContainer GetFieldContainer(ScriptableObject sObject, FieldInfo fieldInfo, int fieldId, bool createNew)
 	{
-		FieldInfoRect fRect = fieldInfoRects
-			.FirstOrDefault(fr => fr.inspectedField == fieldInfo && fr.fieldId == fieldId);
+		FieldInfoContainer container = fieldInfoContainers
+			.FirstOrDefault(cont => cont.inspectedField == fieldInfo && cont.fieldId == fieldId);
 
-		if(fRect == null && createNew)
+		if(container == null && createNew)
 		{
-			fRect = new FieldInfoRect();
-			fRect.inspectedField = fieldInfo;
-			fRect.fieldId = fieldId;
+			container = new FieldInfoContainer();
+			container.inspectedField = fieldInfo;
+			container.fieldId = fieldId;
 
 			ScriptableObjectNode node = childNodes.FirstOrDefault(n => n.inspectedObject == sObject);
 
@@ -537,11 +608,11 @@ public class ScriptableObjectNode : BaseNode
 				}
 			}
 
-			fRect.linkedNode = node;
-			fieldInfoRects.Add(fRect);
+			container.linkedNode = node;
+			fieldInfoContainers.Add(container);
 		}
 
-		return fRect;
+		return container;
 	}
 
 
@@ -673,21 +744,23 @@ public class ScriptableObjectNode : BaseNode
 		}
 		else
 		{
+
 			EditorGUI.BeginChangeCheck();
-			UnityEngine.Object obj = (UnityEngine.Object)field.GetValue(inspectedObject);
+			UnityEngine.Object obj = EditorGUILayout.ObjectField((UnityEngine.Object)field.GetValue(inspectedObject), type, false);
 			if(EditorGUI.EndChangeCheck())
 			{
 				OnBeforeInspectedObjectUpdated();
-				field.SetValue(inspectedObject, EditorGUILayout.ObjectField(obj, type, false));
+				field.SetValue(inspectedObject, obj);
 			}
 		}
 	}
 
 	void DrawScriptableObject(FieldInfo field)
 	{
-		int fieldId = -1;
-
+		Type fieldType = field.FieldType;
+		int fieldId = NonListFieldId;
 		ScriptableObject sObject = field.GetValue(inspectedObject) as ScriptableObject;
+		bool isNull = sObject == null;
 
 		if(sObject == inspectedObject)
 		{
@@ -697,17 +770,15 @@ public class ScriptableObjectNode : BaseNode
 
 		EditorGUILayout.BeginHorizontal();
 
-		bool isNull = sObject == null;
-
 		if(!isNull)
 		{
-			if(Toggle("Remove"))
+			if(Toggle("-"))
 			{
 				RemoveFieldInfo(field, fieldId);
 				return;
 			}
 
-			UpdateFieldRect(sObject, field, fieldId);
+			UpdateFieldContainer(sObject, field, fieldId);
 		}
 		else
 		{
@@ -715,12 +786,11 @@ public class ScriptableObjectNode : BaseNode
 		}
 
 		DrawExpandField(sObject);
+		DrawGotoField(sObject); 
 
-		Type fieldType = field.FieldType;
 
 		EditorGUI.BeginDisabledGroup(!isNull);
 		EditorGUI.BeginChangeCheck();
-
 		ScriptableObject temp = (ScriptableObject)EditorGUILayout.ObjectField(sObject, fieldType, false);
 		if(EditorGUI.EndChangeCheck())
 		{
@@ -736,7 +806,7 @@ public class ScriptableObjectNode : BaseNode
 	{
 		string className = iList.GetType().GetGenericArguments()[0].ToString();
 
-		if(Toggle("Create"))
+		if(Toggle("Create", GUILayout.Width(50f)))
 		{
 			OnBeforeInspectedObjectUpdated();
 			ScriptableObject asset = ScriptableObjectUtility.CreateScriptableAsset(createField, className);
@@ -748,7 +818,7 @@ public class ScriptableObjectNode : BaseNode
 
 	void DrawCreateField(FieldInfo field, string className)
 	{
-		if(Toggle("Create"))
+		if(Toggle("Create", GUILayout.Width(50f)))
 		{
 			OnBeforeInspectedObjectUpdated();
 			ScriptableObject asset = ScriptableObjectUtility.CreateScriptableAsset(createField, className);
@@ -775,14 +845,15 @@ public class ScriptableObjectNode : BaseNode
 			int fieldId = i;
 			EditorGUILayout.BeginHorizontal();
 
-			if(Toggle("Remove"))
+			if(Toggle("-", GUILayout.Width(25f)))
 			{
 				RemoveFieldInfo(field, fieldId);
+				EditorGUILayout.EndHorizontal();
 				return;
 			}
 
 			// Shift this element to left
-			if(Toggle("Up"))
+			if(Toggle("<<", GUILayout.Width(25f)))
 			{
 				if(i != 0)
 				{
@@ -791,10 +862,10 @@ public class ScriptableObjectNode : BaseNode
 					if(typeof(ScriptableObject).IsAssignableFrom(type))
 					{
 						// Update field info rects
-						var fRect1 = fieldInfoRects.First(fr => fr.inspectedField == field && fr.fieldId == i);
-						var frect2 = fieldInfoRects.First(fr => fr.inspectedField == field && fr.fieldId == i - 1);
-						fRect1.fieldId--;
-						frect2.fieldId++;
+						var container1 = fieldInfoContainers.First(fr => fr.inspectedField == field && fr.fieldId == i);
+						var container2 = fieldInfoContainers.First(fr => fr.inspectedField == field && fr.fieldId == i - 1);
+						container1.fieldId--;
+						container2.fieldId++;
 					}
 
 					// Update the list 
@@ -805,7 +876,7 @@ public class ScriptableObjectNode : BaseNode
 			}
 
 			// Shift this element to right 
-			if(Toggle("Down"))
+			if(Toggle(">>", GUILayout.Width(25f)))
 			{
 				if(i != iList.Count - 1)
 				{
@@ -814,10 +885,10 @@ public class ScriptableObjectNode : BaseNode
 					if(typeof(ScriptableObject).IsAssignableFrom(type))
 					{
 						// Update field info rects
-						var fRect1 = fieldInfoRects.First(fr => fr.inspectedField == field && fr.fieldId == i);
-						var frect2 = fieldInfoRects.First(fr => fr.inspectedField == field && fr.fieldId == i + 1);
-						fRect1.fieldId++;
-						frect2.fieldId--;
+						var container1 = fieldInfoContainers.First(cont => cont.inspectedField == field && cont.fieldId == i);
+						var container2 = fieldInfoContainers.First(cont => cont.inspectedField == field && cont.fieldId == i + 1);
+						container1.fieldId++;
+						container2.fieldId--;
 					}
 
 					// Update the list 
@@ -880,10 +951,12 @@ public class ScriptableObjectNode : BaseNode
 					if(sObject == inspectedObject)
 					{
 						Debug.Log("Field Info reference is the same as Inspected Object. Abort.");
+						EditorGUILayout.EndHorizontal();
 						return;
 					}
 
 					DrawExpandField(sObject);
+					DrawGotoField(sObject); 
 
 					bool isNull = sObject == null;
 
@@ -897,7 +970,7 @@ public class ScriptableObjectNode : BaseNode
 
 					if(!isNull)
 					{
-						UpdateFieldRect(sObject, field, fieldId);
+						UpdateFieldContainer(sObject, field, fieldId);
 					}
 
 					EditorGUI.EndDisabledGroup();
@@ -924,7 +997,7 @@ public class ScriptableObjectNode : BaseNode
 	{
 		EditorGUILayout.BeginHorizontal();
 
-		if(Toggle("Add"))
+		if(Toggle("+", GUILayout.Width(25f)))
 		{
 			OnBeforeInspectedObjectUpdated();
 

@@ -9,12 +9,17 @@ public static class RectExtensions
 		return new Vector2(rect.xMin, rect.yMin);
 	}
 
-	public static Vector2 MiddleLeft(this Rect rect)
+	public static Vector2 Center(this Rect rect)
+	{
+		return new Vector2((rect.xMin + rect.xMax) / 2f, (rect.yMin + rect.yMax) / 2f);
+	}
+
+	public static Vector2 CenterLeft(this Rect rect)
 	{
 		return new Vector2(rect.xMin, (rect.yMin + rect.yMax) / 2f); 
 	}
 
-	public static Vector2 MiddleRight(this Rect rect)
+	public static Vector2 CenterRight(this Rect rect)
 	{
 		return new Vector2(rect.xMax, (rect.yMin + rect.yMax) / 2f); 
 	}

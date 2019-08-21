@@ -3,12 +3,18 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 using System.Linq;
-using System; 
+using System;
 
 public class ScriptableObjectInspector : NodeEditor
 {
-	readonly string scriptableData = "scriptable";
-	readonly string noteData = "note";
+	enum WindowMode { edit, visualization }
+
+	static Dictionary<Type, Color> typeByColor = new Dictionary<Type, Color>();
+
+	WindowMode windowMode = WindowMode.edit;
+
+	const string ScriptableData = "scriptable";
+	const string NoteData = "note";
 
 	[MenuItem("Window/Scriptable Object Inspector")]
 	static void ShowEditor()
@@ -16,13 +22,27 @@ public class ScriptableObjectInspector : NodeEditor
 		editorWindow = GetWindow<ScriptableObjectInspector>();
 	}
 
+	public static void OnTypeInspected(Type type)
+	{
+		if(!typeByColor.ContainsKey(type))
+		{
+			typeByColor.Add(type, Color.white);
+		}
+	}
+
 	public static ScriptableObjectNode FindExistingNode(ScriptableObject inspected)
 	{
-		// Try and find copy from existing nodes 
 		return nodes
-			.Where(node => node is ScriptableObjectNode)
-			.FirstOrDefault(node => (node as ScriptableObjectNode).GetInspectedObject() == inspected)
+			.FirstOrDefault(node => (node as ScriptableObjectNode)?.GetInspectedObject() == inspected)
 			as ScriptableObjectNode;
+	}
+
+	public override void DrawSettings()
+	{
+		base.DrawSettings();
+
+		DrawWindowMode();
+		DrawClassByColor();
 	}
 
 	public override void GetWindow()
@@ -39,25 +59,110 @@ public class ScriptableObjectInspector : NodeEditor
 	{
 		GenericMenu menu = new GenericMenu();
 
-		menu.AddItem(new GUIContent("Add Scriptable Node"), false, ContextCallback, scriptableData);
-		menu.AddItem(new GUIContent("Add Note"), false, ContextCallback, noteData);
+		menu.AddItem(new GUIContent("Add Scriptable Node"), false, ContextCallback, ScriptableData);
+		menu.AddItem(new GUIContent("Add Note"), false, ContextCallback, NoteData);
 
-		menu.ShowAsContext(); 
+		menu.ShowAsContext();
 	}
 
 	public override void ContextCallback(object obj)
 	{
 		base.ContextCallback(obj);
 
-		string callback = obj.ToString(); 
+		string callback = obj.ToString();
 
-		if(callback.Equals(scriptableData))
+		if(callback.Equals(ScriptableData))
 		{
-			CreateNodeInstance<ScriptableObjectNode>(); 
+			CreateNodeInstance<ScriptableObjectNode>();
 		}
-		else if(callback.Equals(noteData))
+		else if(callback.Equals(NoteData))
 		{
 			CreateNodeInstance<NoteNode>();
 		}
 	}
+
+	public override void DrawCurves(Node node)
+	{
+		if(windowMode == WindowMode.edit)
+		{
+			base.DrawCurves(node);
+		}
+		else
+		{
+			if(node is ScriptableObjectNode sNode)
+			{
+				sNode.OnVisualizeCurves(); 
+			}
+		} 
+	}
+
+	public override void WindowFunction(int id)
+	{
+		if(windowMode == WindowMode.edit)
+		{
+			// Base class draws edit window 
+			base.WindowFunction(id);
+		}
+		else
+		{
+			if(nodes.ElementAt(id) is ScriptableObjectNode sNode)
+			{
+				sNode.OnVisualizeWindow();
+				DragWindow(sNode);
+			}
+		}
+	}
+
+	void DrawWindowMode()
+	{
+		EditorGUILayout.Space();
+		EditorGUILayout.LabelField("Window Mode", EditorStyles.boldLabel);
+
+		EditorGUI.BeginChangeCheck(); 
+		windowMode = (WindowMode)EditorGUILayout.EnumPopup(windowMode);
+		if(EditorGUI.EndChangeCheck())
+		{
+			AutoLayoutNodes(); 
+		}
+	}
+
+	void AutoLayoutNodes()
+	{
+		nodes.ForEach(node =>
+		{
+			node.windowRect.width = 1f;
+			node.windowRect.height = 1f; 
+		});
+	}
+
+	void DrawClassByColor()
+	{
+		if(typeByColor.Count > 0)
+		{
+			EditorGUILayout.Space();
+			EditorGUILayout.LabelField("Class by Color", EditorStyles.boldLabel);
+
+			// Draw types by color 
+			foreach(var key in typeByColor.Keys.ToList())
+			{
+				EditorGUILayout.BeginHorizontal();
+				EditorGUILayout.LabelField(key.ToString(), GUILayout.Width(100f));
+				typeByColor[key] = EditorGUILayout.ColorField(typeByColor[key]);
+				EditorGUILayout.EndHorizontal();
+			}
+
+			if(GUILayout.Toggle(false, "Apply", "Button"))
+			{
+				// On Apply Color by Class
+				nodes.ForEach(node =>
+				{
+					if(node is ScriptableObjectNode sNode)
+					{
+						sNode.windowColor = typeByColor.FirstOrDefault(kvp => kvp.Key == sNode.GetInspectedObject().GetType()).Value;
+					}
+				});
+			}
+		}
+	}
 }
+
