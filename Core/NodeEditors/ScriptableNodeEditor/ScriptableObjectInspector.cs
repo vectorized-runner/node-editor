@@ -122,6 +122,15 @@ public class ScriptableObjectInspector : NodeEditor
 		windowMode = (WindowMode)EditorGUILayout.EnumPopup(windowMode);
 		if(EditorGUI.EndChangeCheck())
 		{
+			if(windowMode == WindowMode.edit)
+			{
+				nodes.ForEach(node => node.allowResizeHorizontal = false); 
+			}
+			else if(windowMode == WindowMode.visualization)
+			{
+				nodes.ForEach(node => node.allowResizeHorizontal = true); 
+			}
+
 			AutoLayoutNodes(); 
 		}
 	}

@@ -9,7 +9,7 @@ public abstract class Node : ScriptableObject
 	public Color windowColor = Color.white;
 	public Dictionary<string, string> classShortcuts = new Dictionary<string, string>();
 	public int snapValue = 10;
-	public bool allowResizeHorizontal = true; 
+	public bool allowResizeHorizontal; 
 	public bool lockPosition;
 	public bool snap;
 	public bool isHidden;
@@ -85,10 +85,7 @@ public abstract class Node : ScriptableObject
 
 	void DrawResize()
 	{
-		// Allow resize horizontal by default 
-		// Don't allow resize vertical 
-
-		//allowResizeHorizontal = GUILayout.Toggle(allowResizeHorizontal, "Resize", "Button");
+		allowResizeHorizontal = GUILayout.Toggle(allowResizeHorizontal, "Resize", "Button");
 	}
 
 	void DrawWindowColor()
